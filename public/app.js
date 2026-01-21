@@ -5,6 +5,9 @@ const API_URL = '/api';
 let currentUser = null;
 let authToken = null;
 
+// Avatar base URL
+const AVATAR_BASE_URL = 'https://forgeblock.onrender.com/faces/';
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     checkSession();
@@ -63,6 +66,9 @@ function showTab(tab) {
     const loginForm = document.getElementById('loginForm');
     const registerForm = document.getElementById('registerForm');
     
+    // Сброс всех сообщений
+    clearMessages();
+    
     if (tab === 'login') {
         loginTab.classList.add('active');
         registerTab.classList.remove('active');
@@ -74,8 +80,6 @@ function showTab(tab) {
         registerForm.classList.remove('hidden');
         loginForm.classList.add('hidden');
     }
-    
-    clearMessages();
 }
 
 function clearMessages() {
@@ -93,7 +97,7 @@ function showMessage(elementId, message, isError = true) {
     }
 }
 
-// ============ ГЛАВНЫЙ ФИКС ============
+// Show Auth Section
 function showAuthSection() {
     const authSection = document.getElementById('authSection');
     const userSection = document.getElementById('userSection');
@@ -110,30 +114,83 @@ function showAuthSection() {
     console.log('Showing auth section');
 }
 
+// Show User Panel
 function showUserPanel() {
     const authSection = document.getElementById('authSection');
     const userSection = document.getElementById('userSection');
     
-    // ПОЛНОСТЬЮ скрываем auth секцию
+    // Hide auth section
     if (authSection) {
         authSection.style.display = 'none';
         authSection.classList.add('hidden');
     }
     
-    // Показываем user panel
+    // Show user panel
     if (userSection) {
         userSection.style.display = 'block';
         userSection.classList.remove('hidden');
     }
     
-    // Обновляем данные пользователя
-    const userName = document.getElementById('userName');
-    const userAvatar = document.getElementById('userAvatar');
+    // Update user data
+    const userNameEl = document.getElementById('userName');
+    const avatarPlaceholder = document.getElementById('avatarPlaceholder');
     
-    if (userName) userName.textContent = currentUser || 'Player';
-    if (userAvatar) userAvatar.textContent = (currentUser || '?').charAt(0).toUpperCase();
+    if (userNameEl) userNameEl.textContent = currentUser || 'Player';
+    if (avatarPlaceholder) {
+        avatarPlaceholder.textContent = (currentUser || '?').charAt(0).toUpperCase();
+    }
+    
+    // Load avatar
+    if (currentUser) {
+        loadPlayerAvatar(currentUser);
+    }
     
     console.log('Showing user panel for:', currentUser);
+}
+
+// Load Player Avatar
+async function loadPlayerAvatar(username) {
+    const placeholder = document.getElementById('avatarPlaceholder');
+    const loading = document.getElementById('avatarLoading');
+    const avatarImg = document.getElementById('userFaceImg');
+    
+    if (!placeholder || !loading || !avatarImg) return;
+    
+    // Show loading state
+    placeholder.style.display = 'none';
+    loading.style.display = 'flex';
+    avatarImg.style.display = 'none';
+    
+    try {
+        // Try to load avatar from server
+        const avatarUrl = `${AVATAR_BASE_URL}${username}.png?t=${Date.now()}`;
+        
+        // Create image element and test if it loads
+        const img = new Image();
+        img.onload = function() {
+            avatarImg.src = avatarUrl;
+            loading.style.display = 'none';
+            avatarImg.style.display = 'block';
+        };
+        
+        img.onerror = function() {
+            // If avatar not found, load default
+            avatarImg.src = `${AVATAR_BASE_URL}default.png`;
+            avatarImg.onload = function() {
+                loading.style.display = 'none';
+                avatarImg.style.display = 'block';
+            };
+        };
+        
+        img.src = avatarUrl;
+        
+    } catch (error) {
+        console.error('Failed to load avatar:', error);
+        // Show first letter as fallback
+        loading.style.display = 'none';
+        placeholder.textContent = username.charAt(0).toUpperCase();
+        placeholder.style.display = 'flex';
+    }
 }
 
 // Settings Modal
@@ -234,7 +291,7 @@ function setupForms() {
                         localStorage.setItem('username', data.username);
                     }
                     
-                    // СРАЗУ переключаем на user panel
+                    // Switch to user panel
                     setTimeout(() => {
                         showUserPanel();
                     }, 300);
@@ -291,7 +348,7 @@ function setupForms() {
                 if (data.success) {
                     showMessage('registerMessage', 'Account created! Logging in...', false);
                     
-                    // Автоматический логин после регистрации
+                    // Auto-login after registration
                     setTimeout(async () => {
                         try {
                             const loginResponse = await fetch(`${API_URL}/login`, {
@@ -309,10 +366,10 @@ function setupForms() {
                                 localStorage.setItem('authToken', loginData.token);
                                 localStorage.setItem('username', loginData.username);
                                 
-                                // СРАЗУ переключаем на user panel
+                                // Switch to user panel
                                 showUserPanel();
                             } else {
-                                // Если автологин не удался - переключаем на вкладку логина
+                                // If auto-login fails - switch to login tab
                                 showTab('login');
                                 document.getElementById('loginUsername').value = username;
                                 showMessage('loginMessage', 'Please login with your new account', false);
@@ -378,9 +435,9 @@ function setupForms() {
                     localStorage.setItem('username', data.newUsername);
                     
                     const userName = document.getElementById('userName');
-                    const userAvatar = document.getElementById('userAvatar');
+                    const avatarPlaceholder = document.getElementById('avatarPlaceholder');
                     if (userName) userName.textContent = data.newUsername;
-                    if (userAvatar) userAvatar.textContent = data.newUsername.charAt(0).toUpperCase();
+                    if (avatarPlaceholder) avatarPlaceholder.textContent = data.newUsername.charAt(0).toUpperCase();
                     
                     document.getElementById('newUsername').value = '';
                     document.getElementById('confirmPassword').value = '';
@@ -518,7 +575,6 @@ async function logout() {
 async function checkServerStatus() {
     const statusEl = document.getElementById('serverStatus');
     const usersEl = document.getElementById('totalUsers');
-    const dbEl = document.getElementById('dbStatus');
     
     try {
         const response = await fetch(`${API_URL}/status`);
@@ -535,11 +591,6 @@ async function checkServerStatus() {
         }
         
         if (usersEl) usersEl.textContent = data.players || 0;
-        
-        if (dbEl) {
-            dbEl.textContent = data.database || 'unknown';
-            dbEl.className = 'status-value ' + (data.database === 'connected' ? 'online' : 'offline');
-        }
         
     } catch (error) {
         console.error('Status check error:', error);

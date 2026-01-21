@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ForgeBlock</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -12,17 +12,19 @@
     <div class="overlay"></div>
     
     <main class="container">
+        <!-- Logo -->
         <header class="logo-area">
-            <h1 class="glitch" data-text="FORGEBLOCK">FORGEBLOCK</h1>
-            <p class="subtitle">Forge Sandbox</p>
+            <img src="logo.png" alt="ForgeBlock Logo" class="logo-img">
+            <p class="subtitle">Multiplayer Sandbox Game</p>
         </header>
 
         <!-- Auth Section -->
         <section class="auth-section" id="authSection">
             <div class="ui-panel auth-panel">
+                <!-- Tabs -->
                 <div class="auth-tabs">
-                    <button class="tab-btn active" id="loginTab" onclick="showTab('login')">LOGIN</button>
-                    <button class="tab-btn" id="registerTab" onclick="showTab('register')">REGISTER</button>
+                    <button class="tab-btn active" id="loginTab" onclick="showTab('login')">SIGN IN</button>
+                    <button class="tab-btn" id="registerTab" onclick="showTab('register')">CREATE ACCOUNT</button>
                 </div>
 
                 <!-- Login Form -->
@@ -43,7 +45,7 @@
                         <input type="checkbox" id="rememberMe" name="remember" checked>
                         <label for="rememberMe">Remember me (30 days)</label>
                     </div>
-                    <button type="submit" class="btn-auth" id="loginBtn">LOGIN</button>
+                    <button type="submit" class="btn-auth" id="loginBtn">PLAY NOW</button>
                     <p class="message" id="loginMessage"></p>
                 </form>
 
@@ -79,11 +81,17 @@
             </div>
         </section>
 
-        <!-- User Panel (shown after login) -->
+        <!-- User Panel -->
         <section class="user-section hidden" id="userSection">
             <div class="ui-panel user-panel">
                 <div class="user-info">
-                    <div class="avatar" id="userAvatar">?</div>
+                    <div class="avatar-container">
+                        <div class="avatar-placeholder" id="avatarPlaceholder">?</div>
+                        <div class="avatar-loading" id="avatarLoading" style="display: none;">
+                            <div class="spinner"></div>
+                        </div>
+                        <img class="avatar-img" id="userFaceImg" src="" alt="Player Avatar" style="display: none;">
+                    </div>
                     <div class="user-details">
                         <h2 id="userName">Player</h2>
                         <p class="user-status online">● Online</p>
@@ -92,14 +100,14 @@
                 </div>
 
                 <div class="download-box">
-                    <p class="version-text">Version 0.1</p>
+                    <p class="version-text">Version 0.1.5</p>
                     <a href="/downloads/ForgeBlock_Setup.zip" class="btn-download" id="downloadBtn" download>
-                        DOWNLOAD GAME
+                        DOWNLOAD GAME CLIENT
                     </a>
-                    <p class="download-hint">Game will auto-login with your account</p>
+                    <p class="download-hint">Auto-login with your account</p>
                 </div>
 
-                <button class="btn-logout" onclick="logout()">LOGOUT</button>
+                <button class="btn-logout" onclick="logout()">LOG OUT</button>
             </div>
         </section>
 
@@ -165,17 +173,13 @@
                 <span id="serverStatus" class="status-value offline">Checking...</span>
             </div>
             <div class="status-item">
-                <span class="status-label">Registered:</span>
+                <span class="status-label">Players:</span>
                 <span id="totalUsers" class="status-value">0</span>
-            </div>
-            <div class="status-item">
-                <span class="status-label">Database:</span>
-                <span id="dbStatus" class="status-value">...</span>
             </div>
         </section>
 
         <footer class="footer">
-            <p>© 2025 ForgeBlock</p>
+            <p>© 2025 ForgeBlock • Built with love</p>
         </footer>
     </main>
 
