@@ -38,141 +38,190 @@ function showTab(tab) {
 }
 
 function clearMessages() {
-    document.getElementById('loginMessage').textContent = '';
-    document.getElementById('loginMessage').className = 'message';
-    document.getElementById('registerMessage').textContent = '';
-    document.getElementById('registerMessage').className = 'message';
+    const loginMsg = document.getElementById('loginMessage');
+    const regMsg = document.getElementById('registerMessage');
+    if (loginMsg) {
+        loginMsg.textContent = '';
+        loginMsg.className = 'message';
+    }
+    if (regMsg) {
+        regMsg.textContent = '';
+        regMsg.className = 'message';
+    }
 }
 
 function showMessage(elementId, message, isError = true) {
     const el = document.getElementById(elementId);
-    el.textContent = message;
-    el.className = 'message ' + (isError ? 'error' : 'success');
+    if (el) {
+        el.textContent = message;
+        el.className = 'message ' + (isError ? 'error' : 'success');
+    }
+}
+
+// Show auth section
+function showAuthSection() {
+    const authSection = document.getElementById('authSection');
+    const userSection = document.getElementById('userSection');
+    
+    if (authSection) authSection.classList.remove('hidden');
+    if (userSection) userSection.classList.add('hidden');
+}
+
+// Show user panel
+function showUserPanel() {
+    const authSection = document.getElementById('authSection');
+    const userSection = document.getElementById('userSection');
+    
+    if (authSection) authSection.classList.add('hidden');
+    if (userSection) userSection.classList.remove('hidden');
+    
+    const userName = document.getElementById('userName');
+    const userAvatar = document.getElementById('userAvatar');
+    const authTokenEl = document.getElementById('authToken');
+    
+    if (userName) userName.textContent = currentUser || 'Player';
+    if (userAvatar) userAvatar.textContent = (currentUser || '?').charAt(0).toUpperCase();
+    if (authTokenEl) authTokenEl.textContent = authToken || 'Error loading token';
 }
 
 // Setup form handlers
 function setupForms() {
     // Login
-    document.getElementById('loginForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        
-        const username = document.getElementById('loginUsername').value.trim();
-        const password = document.getElementById('loginPassword').value;
-        const remember = document.getElementById('rememberMe').checked;
-        
-        const btn = document.getElementById('loginBtn');
-        const originalText = btn.textContent;
-        
-        btn.disabled = true;
-        btn.classList.add('loading');
-        
-        try {
-            const response = await fetch(`${API_URL}/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ username, password, remember })
-            });
+    const loginForm = document.getElementById('loginForm');
+    if (loginForm) {
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
             
-            const data = await response.json();
+            const username = document.getElementById('loginUsername').value.trim();
+            const password = document.getElementById('loginPassword').value;
+            const rememberEl = document.getElementById('rememberMe');
+            const remember = rememberEl ? rememberEl.checked : true;
             
-            if (data.success) {
-                showMessage('loginMessage', 'Login successful!', false);
-                authToken = data.token;
-                currentUser = data.username;
+            const btn = document.getElementById('loginBtn');
+            if (!btn) return;
+            
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.classList.add('loading');
+            
+            try {
+                const response = await fetch(`${API_URL}/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ username, password, remember })
+                });
                 
-                // Save to localStorage as backup
-                if (remember) {
-                    localStorage.setItem('authToken', data.token);
-                    localStorage.setItem('username', data.username);
+                const data = await response.json();
+                
+                if (data.success) {
+                    showMessage('loginMessage', 'Login successful!', false);
+                    authToken = data.token;
+                    currentUser = data.username;
+                    
+                    // Save to localStorage
+                    if (remember) {
+                        localStorage.setItem('authToken', data.token);
+                        localStorage.setItem('username', data.username);
+                    }
+                    
+                    setTimeout(() => showUserPanel(), 500);
+                } else {
+                    showMessage('loginMessage', data.message || 'Login failed');
                 }
-                
-                setTimeout(() => showUserPanel(), 500);
-            } else {
-                showMessage('loginMessage', data.message || 'Login failed');
+            } catch (error) {
+                console.error('Login error:', error);
+                showMessage('loginMessage', 'Connection error. Please try again.');
             }
-        } catch (error) {
-            console.error('Login error:', error);
-            showMessage('loginMessage', 'Connection error. Please try again.');
-        }
-        
-        btn.disabled = false;
-        btn.classList.remove('loading');
-        btn.textContent = originalText;
-    });
+            
+            btn.disabled = false;
+            btn.classList.remove('loading');
+            btn.textContent = originalText;
+        });
+    }
     
     // Register
-    document.getElementById('registerForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        
-        const username = document.getElementById('regUsername').value.trim();
-        const email = document.getElementById('regEmail').value.trim();
-        const password = document.getElementById('regPassword').value;
-        const confirm = document.getElementById('regConfirm').value;
-        
-        // Validation
-        if (password !== confirm) {
-            showMessage('registerMessage', 'Passwords do not match');
-            return;
-        }
-        
-        if (!/^[a-zA-Z0-9_]+$/.test(username)) {
-            showMessage('registerMessage', 'Username: only letters, numbers, underscore');
-            return;
-        }
-        
-        const btn = document.getElementById('registerBtn');
-        const originalText = btn.textContent;
-        
-        btn.disabled = true;
-        btn.classList.add('loading');
-        
-        try {
-            const response = await fetch(`${API_URL}/register`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, email, password })
-            });
+    const registerForm = document.getElementById('registerForm');
+    if (registerForm) {
+        registerForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
             
-            const data = await response.json();
+            const username = document.getElementById('regUsername').value.trim();
+            const email = document.getElementById('regEmail').value.trim();
+            const password = document.getElementById('regPassword').value;
+            const confirm = document.getElementById('regConfirm').value;
             
-            if (data.success) {
-                showMessage('registerMessage', 'Account created! Logging in...', false);
-                
-                // Auto-login after registration
-                setTimeout(async () => {
-                    const loginResponse = await fetch(`${API_URL}/login`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        credentials: 'include',
-                        body: JSON.stringify({ username, password, remember: true })
-                    });
-                    
-                    const loginData = await loginResponse.json();
-                    
-                    if (loginData.success) {
-                        authToken = loginData.token;
-                        currentUser = loginData.username;
-                        localStorage.setItem('authToken', loginData.token);
-                        localStorage.setItem('username', loginData.username);
-                        showUserPanel();
-                    } else {
-                        showTab('login');
-                        document.getElementById('loginUsername').value = username;
-                    }
-                }, 1000);
-            } else {
-                showMessage('registerMessage', data.message || 'Registration failed');
+            // Validation
+            if (password !== confirm) {
+                showMessage('registerMessage', 'Passwords do not match');
+                return;
             }
-        } catch (error) {
-            console.error('Register error:', error);
-            showMessage('registerMessage', 'Connection error. Please try again.');
-        }
-        
-        btn.disabled = false;
-        btn.classList.remove('loading');
-        btn.textContent = originalText;
-    });
+            
+            if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+                showMessage('registerMessage', 'Username: only letters, numbers, underscore');
+                return;
+            }
+            
+            const btn = document.getElementById('registerBtn');
+            if (!btn) return;
+            
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.classList.add('loading');
+            
+            try {
+                const response = await fetch(`${API_URL}/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, email, password })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showMessage('registerMessage', 'Account created! Logging in...', false);
+                    
+                    // Auto-login after registration
+                    setTimeout(async () => {
+                        try {
+                            const loginResponse = await fetch(`${API_URL}/login`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                credentials: 'include',
+                                body: JSON.stringify({ username, password, remember: true })
+                            });
+                            
+                            const loginData = await loginResponse.json();
+                            
+                            if (loginData.success) {
+                                authToken = loginData.token;
+                                currentUser = loginData.username;
+                                localStorage.setItem('authToken', loginData.token);
+                                localStorage.setItem('username', loginData.username);
+                                showUserPanel();
+                            } else {
+                                showTab('login');
+                                const loginUsername = document.getElementById('loginUsername');
+                                if (loginUsername) loginUsername.value = username;
+                            }
+                        } catch (err) {
+                            console.error('Auto-login error:', err);
+                            showTab('login');
+                        }
+                    }, 1000);
+                } else {
+                    showMessage('registerMessage', data.message || 'Registration failed');
+                }
+            } catch (error) {
+                console.error('Register error:', error);
+                showMessage('registerMessage', 'Connection error. Please try again.');
+            }
+            
+            btn.disabled = false;
+            btn.classList.remove('loading');
+            btn.textContent = originalText;
+        });
+    }
 }
 
 // Check existing session
@@ -181,58 +230,68 @@ async function checkSession() {
     const savedToken = localStorage.getItem('authToken');
     const savedUser = localStorage.getItem('username');
     
-    if (savedToken && savedUser) {
-        try {
-            const response = await fetch(`${API_URL}/verify`, {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${savedToken}`
-                },
-                credentials: 'include'
-            });
-            
-            const data = await response.json();
-            
-            if (data.valid) {
-                authToken = savedToken;
-                currentUser = data.username;
-                showUserPanel();
-                return;
-            }
-        } catch (error) {
-            console.error('Session check error:', error);
-        }
-        
-        // Token invalid, clear storage
-        localStorage.removeItem('authToken');
-        localStorage.removeItem('username');
+    if (!savedToken || !savedUser) {
+        showAuthSection();
+        return;
     }
-}
-
-// Show user panel
-function showUserPanel() {
-    document.getElementById('authSection').classList.add('hidden');
-    document.getElementById('userSection').classList.remove('hidden');
     
-    document.getElementById('userName').textContent = currentUser;
-    document.getElementById('userAvatar').textContent = currentUser.charAt(0).toUpperCase();
-    document.getElementById('authToken').textContent = authToken || 'Error loading token';
+    try {
+        const response = await fetch(`${API_URL}/verify`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${savedToken}`
+            },
+            credentials: 'include'
+        });
+        
+        const data = await response.json();
+        
+        if (data.valid) {
+            authToken = savedToken;
+            currentUser = data.username || savedUser;
+            showUserPanel();
+        } else {
+            // Token invalid, clear storage
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('username');
+            showAuthSection();
+        }
+    } catch (error) {
+        console.error('Session check error:', error);
+        // Network error - try to use cached data anyway for offline support
+        // Or show auth section
+        authToken = savedToken;
+        currentUser = savedUser;
+        showUserPanel();
+    }
 }
 
 // Copy token
 function copyToken() {
-    const token = document.getElementById('authToken').textContent;
+    const tokenEl = document.getElementById('authToken');
+    if (!tokenEl) return;
+    
+    const token = tokenEl.textContent;
     navigator.clipboard.writeText(token).then(() => {
         const btn = document.getElementById('copyBtn');
-        btn.textContent = 'COPIED!';
-        btn.style.background = '#238636';
-        setTimeout(() => {
-            btn.textContent = 'COPY';
-            btn.style.background = '';
-        }, 2000);
+        if (btn) {
+            btn.textContent = 'COPIED!';
+            btn.style.background = '#238636';
+            setTimeout(() => {
+                btn.textContent = 'COPY';
+                btn.style.background = '';
+            }, 2000);
+        }
     }).catch(err => {
         console.error('Copy failed:', err);
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = token;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
     });
 }
 
@@ -243,19 +302,22 @@ async function logout() {
             method: 'POST',
             credentials: 'include'
         });
-    } catch (e) {}
+    } catch (e) {
+        console.error('Logout error:', e);
+    }
     
     localStorage.removeItem('authToken');
     localStorage.removeItem('username');
     authToken = null;
     currentUser = null;
     
-    document.getElementById('authSection').classList.remove('hidden');
-    document.getElementById('userSection').classList.add('hidden');
+    showAuthSection();
     
     // Clear forms
-    document.getElementById('loginUsername').value = '';
-    document.getElementById('loginPassword').value = '';
+    const loginUsername = document.getElementById('loginUsername');
+    const loginPassword = document.getElementById('loginPassword');
+    if (loginUsername) loginUsername.value = '';
+    if (loginPassword) loginPassword.value = '';
     clearMessages();
 }
 
@@ -269,22 +331,34 @@ async function checkServerStatus() {
         const response = await fetch(`${API_URL}/status`);
         const data = await response.json();
         
-        if (data.online) {
-            statusEl.textContent = '● Online';
-            statusEl.className = 'status-value online';
-        } else {
-            statusEl.textContent = '● Offline';
-            statusEl.className = 'status-value offline';
+        if (statusEl) {
+            if (data.online) {
+                statusEl.textContent = '● Online';
+                statusEl.className = 'status-value online';
+            } else {
+                statusEl.textContent = '● Offline';
+                statusEl.className = 'status-value offline';
+            }
         }
         
-        usersEl.textContent = data.players || 0;
-        dbEl.textContent = data.database || 'unknown';
-        dbEl.className = 'status-value ' + (data.database === 'connected' ? 'online' : 'offline');
+        if (usersEl) {
+            usersEl.textContent = data.players || 0;
+        }
+        
+        if (dbEl) {
+            dbEl.textContent = data.database || 'unknown';
+            dbEl.className = 'status-value ' + (data.database === 'connected' ? 'online' : 'offline');
+        }
         
     } catch (error) {
-        statusEl.textContent = '● Error';
-        statusEl.className = 'status-value offline';
-        dbEl.textContent = 'error';
-        dbEl.className = 'status-value offline';
+        console.error('Status check error:', error);
+        if (statusEl) {
+            statusEl.textContent = '● Error';
+            statusEl.className = 'status-value offline';
+        }
+        if (dbEl) {
+            dbEl.textContent = 'error';
+            dbEl.className = 'status-value offline';
+        }
     }
 }
