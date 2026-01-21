@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ForgeBlock</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+</head>
+<body>
+    <div class="overlay"></div>
+    
+    <main class="container">
+        <header class="logo-area">
+            <h1 class="glitch" data-text="FORGEBLOCK">FORGEBLOCK</h1>
+            <p class="subtitle">Forge Sandbox</p>
+        </header>
+
+        <!-- Auth Section -->
+        <section class="auth-section" id="authSection">
+            <div class="ui-panel auth-panel">
+                <div class="auth-tabs">
+                    <button class="tab-btn active" id="loginTab" onclick="showTab('login')">LOGIN</button>
+                    <button class="tab-btn" id="registerTab" onclick="showTab('register')">REGISTER</button>
+                </div>
+
+                <!-- Login Form -->
+                <form id="loginForm" class="auth-form">
+                    <div class="input-group">
+                        <label for="loginUsername">USERNAME</label>
+                        <input type="text" id="loginUsername" name="username" required 
+                               minlength="3" maxlength="24" autocomplete="username"
+                               placeholder="Enter username">
+                    </div>
+                    <div class="input-group">
+                        <label for="loginPassword">PASSWORD</label>
+                        <input type="password" id="loginPassword" name="password" required 
+                               minlength="4" maxlength="32" autocomplete="current-password"
+                               placeholder="Enter password">
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="rememberMe" name="remember" checked>
+                        <label for="rememberMe">Remember me (30 days)</label>
+                    </div>
+                    <button type="submit" class="btn-auth" id="loginBtn">LOGIN</button>
+                    <p class="message" id="loginMessage"></p>
+                </form>
+
+                <!-- Register Form -->
+                <form id="registerForm" class="auth-form hidden">
+                    <div class="input-group">
+                        <label for="regUsername">USERNAME</label>
+                        <input type="text" id="regUsername" name="username" required 
+                               minlength="3" maxlength="24" autocomplete="username"
+                               placeholder="Choose username (letters, numbers, _)">
+                    </div>
+                    <div class="input-group">
+                        <label for="regEmail">EMAIL</label>
+                        <input type="email" id="regEmail" name="email" required 
+                               autocomplete="email" placeholder="your@email.com">
+                    </div>
+                    <div class="input-group">
+                        <label for="regPassword">PASSWORD</label>
+                        <input type="password" id="regPassword" name="password" required 
+                               minlength="4" maxlength="32" autocomplete="new-password"
+                               placeholder="Min 4 characters">
+                    </div>
+                    <div class="input-group">
+                        <label for="regConfirm">CONFIRM PASSWORD</label>
+                        <input type="password" id="regConfirm" name="confirm" required 
+                               minlength="4" maxlength="32" autocomplete="new-password"
+                               placeholder="Repeat password">
+                    </div>
+                    <button type="submit" class="btn-auth" id="registerBtn">CREATE ACCOUNT</button>
+                    <p class="message" id="registerMessage"></p>
+                </form>
+            </div>
+        </section>
+
+        <!-- User Panel (shown after login) -->
+        <section class="user-section hidden" id="userSection">
+            <div class="ui-panel user-panel">
+                <div class="user-info">
+                    <div class="avatar" id="userAvatar">?</div>
+                    <div class="user-details">
+                        <h2 id="userName">Player</h2>
+                        <p class="user-status online">● Online</p>
+                    </div>
+                </div>
+                
+                <div class="token-section">
+                    <p class="token-label">Your Game Token:</p>
+                    <div class="token-display">
+                        <code id="authToken">Loading...</code>
+                        <button class="btn-small" onclick="copyToken()" id="copyBtn">COPY</button>
+                    </div>
+                    <p class="token-hint">Token auto-saved in downloaded game</p>
+                </div>
+
+                <div class="download-box">
+                    <p class="version-text">Version 0.1</p>
+                    <a href="ForgeBlock_Setup.zip" class="btn-download" id="downloadBtn">
+                        DOWNLOAD Setup
+                    </a>
+                </div>
+
+                <button class="btn-logout" onclick="logout()">LOGOUT</button>
+            </div>
+        </section>
+
+        <!-- Server Status -->
+        <section class="status-section">
+            <div class="status-item">
+                <span class="status-label">Server:</span>
+                <span id="serverStatus" class="status-value offline">Checking...</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Registered:</span>
+                <span id="totalUsers" class="status-value">0</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Database:</span>
+                <span id="dbStatus" class="status-value">...</span>
+            </div>
+        </section>
+
+        <footer class="footer">
+            <p>© 2024 ForgeBlock • <a href="#">Discord</a> • <a href="#">GitHub</a></p>
+        </footer>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>
