@@ -12,28 +12,21 @@ document.addEventListener('DOMContentLoaded', () => {
     setupForms();
     setupUsernameValidation();
     
-    // Check status periodically
     setInterval(checkServerStatus, 30000);
     
-    // Close modal on overlay click
     const modal = document.getElementById('settingsModal');
     if (modal) {
         modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                closeSettings();
-            }
+            if (e.target === modal) closeSettings();
         });
     }
     
-    // Close modal on Escape key
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            closeSettings();
-        }
+        if (e.key === 'Escape') closeSettings();
     });
 });
 
-// Username validation - only allow letters, numbers, underscore
+// Username validation
 function setupUsernameValidation() {
     const usernameInputs = [
         document.getElementById('regUsername'),
@@ -44,14 +37,12 @@ function setupUsernameValidation() {
         if (!input) return;
         
         input.addEventListener('input', (e) => {
-            // Remove any characters that aren't allowed
             const cleaned = e.target.value.replace(/[^a-zA-Z0-9_]/g, '');
             if (cleaned !== e.target.value) {
                 e.target.value = cleaned;
             }
         });
         
-        // Prevent paste of invalid characters
         input.addEventListener('paste', (e) => {
             e.preventDefault();
             const text = (e.clipboardData || window.clipboardData).getData('text');
@@ -61,7 +52,6 @@ function setupUsernameValidation() {
     });
 }
 
-// Validate username
 function isValidUsername(username) {
     return /^[a-zA-Z0-9_]{3,24}$/.test(username);
 }
@@ -89,8 +79,7 @@ function showTab(tab) {
 }
 
 function clearMessages() {
-    const messages = document.querySelectorAll('.message');
-    messages.forEach(msg => {
+    document.querySelectorAll('.message').forEach(msg => {
         msg.textContent = '';
         msg.className = 'message';
     });
@@ -104,28 +93,47 @@ function showMessage(elementId, message, isError = true) {
     }
 }
 
-// Show auth section
+// ============ ГЛАВНЫЙ ФИКС ============
 function showAuthSection() {
     const authSection = document.getElementById('authSection');
     const userSection = document.getElementById('userSection');
     
-    if (authSection) authSection.classList.remove('hidden');
-    if (userSection) userSection.classList.add('hidden');
+    if (authSection) {
+        authSection.style.display = 'block';
+        authSection.classList.remove('hidden');
+    }
+    if (userSection) {
+        userSection.style.display = 'none';
+        userSection.classList.add('hidden');
+    }
+    
+    console.log('Showing auth section');
 }
 
-// Show user panel
 function showUserPanel() {
     const authSection = document.getElementById('authSection');
     const userSection = document.getElementById('userSection');
     
-    if (authSection) authSection.classList.add('hidden');
-    if (userSection) userSection.classList.remove('hidden');
+    // ПОЛНОСТЬЮ скрываем auth секцию
+    if (authSection) {
+        authSection.style.display = 'none';
+        authSection.classList.add('hidden');
+    }
     
+    // Показываем user panel
+    if (userSection) {
+        userSection.style.display = 'block';
+        userSection.classList.remove('hidden');
+    }
+    
+    // Обновляем данные пользователя
     const userName = document.getElementById('userName');
     const userAvatar = document.getElementById('userAvatar');
     
     if (userName) userName.textContent = currentUser || 'Player';
     if (userAvatar) userAvatar.textContent = (currentUser || '?').charAt(0).toUpperCase();
+    
+    console.log('Showing user panel for:', currentUser);
 }
 
 // Settings Modal
@@ -133,6 +141,7 @@ function openSettings() {
     const modal = document.getElementById('settingsModal');
     if (modal) {
         modal.classList.remove('hidden');
+        modal.style.display = 'flex';
         loadSettings();
     }
 }
@@ -141,13 +150,13 @@ function closeSettings() {
     const modal = document.getElementById('settingsModal');
     if (modal) {
         modal.classList.add('hidden');
+        modal.style.display = 'none';
     }
     clearMessages();
 }
 
 async function loadSettings() {
     try {
-        // Load token
         const tokenResponse = await fetch(`${API_URL}/get-token`, {
             headers: { 'Authorization': `Bearer ${authToken}` },
             credentials: 'include'
@@ -158,7 +167,6 @@ async function loadSettings() {
             authTokenEl.textContent = tokenData.token || authToken || 'Error loading token';
         }
         
-        // Load user info
         const settingsResponse = await fetch(`${API_URL}/settings`, {
             headers: { 'Authorization': `Bearer ${authToken}` },
             credentials: 'include'
@@ -175,9 +183,7 @@ async function loadSettings() {
             if (userJoined) {
                 const date = new Date(data.createdAt);
                 userJoined.textContent = date.toLocaleDateString('en-US', {
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric'
+                    year: 'numeric', month: 'short', day: 'numeric'
                 });
             }
             if (newUsername) newUsername.placeholder = data.username;
@@ -205,6 +211,7 @@ function setupForms() {
             
             btn.disabled = true;
             btn.classList.add('loading');
+            clearMessages();
             
             try {
                 const response = await fetch(`${API_URL}/login`, {
@@ -218,6 +225,7 @@ function setupForms() {
                 
                 if (data.success) {
                     showMessage('loginMessage', 'Login successful!', false);
+                    
                     authToken = data.token;
                     currentUser = data.username;
                     
@@ -226,7 +234,10 @@ function setupForms() {
                         localStorage.setItem('username', data.username);
                     }
                     
-                    setTimeout(() => showUserPanel(), 500);
+                    // СРАЗУ переключаем на user panel
+                    setTimeout(() => {
+                        showUserPanel();
+                    }, 300);
                 } else {
                     showMessage('loginMessage', data.message || 'Login failed');
                 }
@@ -251,14 +262,13 @@ function setupForms() {
             const password = document.getElementById('regPassword').value;
             const confirm = document.getElementById('regConfirm').value;
             
-            // Validation
             if (password !== confirm) {
                 showMessage('registerMessage', 'Passwords do not match');
                 return;
             }
             
             if (!isValidUsername(username)) {
-                showMessage('registerMessage', 'Username: 3-24 characters, only letters (a-z), numbers, underscore');
+                showMessage('registerMessage', 'Username: 3-24 chars, only a-z, 0-9, _');
                 return;
             }
             
@@ -267,6 +277,7 @@ function setupForms() {
             
             btn.disabled = true;
             btn.classList.add('loading');
+            clearMessages();
             
             try {
                 const response = await fetch(`${API_URL}/register`, {
@@ -280,7 +291,7 @@ function setupForms() {
                 if (data.success) {
                     showMessage('registerMessage', 'Account created! Logging in...', false);
                     
-                    // Auto-login
+                    // Автоматический логин после регистрации
                     setTimeout(async () => {
                         try {
                             const loginResponse = await fetch(`${API_URL}/login`, {
@@ -297,17 +308,21 @@ function setupForms() {
                                 currentUser = loginData.username;
                                 localStorage.setItem('authToken', loginData.token);
                                 localStorage.setItem('username', loginData.username);
+                                
+                                // СРАЗУ переключаем на user panel
                                 showUserPanel();
                             } else {
+                                // Если автологин не удался - переключаем на вкладку логина
                                 showTab('login');
-                                const loginUsername = document.getElementById('loginUsername');
-                                if (loginUsername) loginUsername.value = username;
+                                document.getElementById('loginUsername').value = username;
+                                showMessage('loginMessage', 'Please login with your new account', false);
                             }
                         } catch (err) {
                             console.error('Auto-login error:', err);
                             showTab('login');
+                            document.getElementById('loginUsername').value = username;
                         }
-                    }, 1000);
+                    }, 500);
                 } else {
                     showMessage('registerMessage', data.message || 'Registration failed');
                 }
@@ -331,7 +346,7 @@ function setupForms() {
             const password = document.getElementById('confirmPassword').value;
             
             if (!isValidUsername(newUsername)) {
-                showMessage('usernameChangeMessage', 'Username: 3-24 characters, only letters (a-z), numbers, underscore');
+                showMessage('usernameChangeMessage', 'Username: 3-24 chars, only a-z, 0-9, _');
                 return;
             }
             
@@ -355,32 +370,28 @@ function setupForms() {
                 const data = await response.json();
                 
                 if (data.success) {
-                    showMessage('usernameChangeMessage', 'Username changed successfully!', false);
+                    showMessage('usernameChangeMessage', 'Username changed!', false);
                     
-                    // Update local state
                     currentUser = data.newUsername;
                     authToken = data.newToken;
                     localStorage.setItem('authToken', data.newToken);
                     localStorage.setItem('username', data.newUsername);
                     
-                    // Update UI
                     const userName = document.getElementById('userName');
                     const userAvatar = document.getElementById('userAvatar');
                     if (userName) userName.textContent = data.newUsername;
                     if (userAvatar) userAvatar.textContent = data.newUsername.charAt(0).toUpperCase();
                     
-                    // Clear form
                     document.getElementById('newUsername').value = '';
                     document.getElementById('confirmPassword').value = '';
                     
-                    // Reload settings
                     setTimeout(() => loadSettings(), 500);
                 } else {
-                    showMessage('usernameChangeMessage', data.message || 'Failed to change username');
+                    showMessage('usernameChangeMessage', data.message || 'Failed');
                 }
             } catch (error) {
                 console.error('Change username error:', error);
-                showMessage('usernameChangeMessage', 'Connection error. Please try again.');
+                showMessage('usernameChangeMessage', 'Connection error');
             }
             
             if (btn) {
@@ -424,7 +435,6 @@ async function checkSession() {
         }
     } catch (error) {
         console.error('Session check error:', error);
-        // Network error - use cached data
         authToken = savedToken;
         currentUser = savedUser;
         showUserPanel();
@@ -497,7 +507,6 @@ async function logout() {
     closeSettings();
     showAuthSection();
     
-    // Clear forms
     const loginUsername = document.getElementById('loginUsername');
     const loginPassword = document.getElementById('loginPassword');
     if (loginUsername) loginUsername.value = '';
@@ -517,17 +526,15 @@ async function checkServerStatus() {
         
         if (statusEl) {
             if (data.online) {
-                statusEl.textContent = '● Online';
+                statusEl.textContent = 'Online';
                 statusEl.className = 'status-value online';
             } else {
-                statusEl.textContent = '● Offline';
+                statusEl.textContent = 'Offline';
                 statusEl.className = 'status-value offline';
             }
         }
         
-        if (usersEl) {
-            usersEl.textContent = data.players || 0;
-        }
+        if (usersEl) usersEl.textContent = data.players || 0;
         
         if (dbEl) {
             dbEl.textContent = data.database || 'unknown';
@@ -537,12 +544,8 @@ async function checkServerStatus() {
     } catch (error) {
         console.error('Status check error:', error);
         if (statusEl) {
-            statusEl.textContent = '● Error';
+            statusEl.textContent = 'Error';
             statusEl.className = 'status-value offline';
-        }
-        if (dbEl) {
-            dbEl.textContent = 'error';
-            dbEl.className = 'status-value offline';
         }
     }
 }

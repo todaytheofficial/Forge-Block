@@ -114,6 +114,7 @@ async function initDatabase() {
 
 // In-memory fallback storage
 const memoryUsers = new Map();
+const memoryPositions = new Map(); // username -> {x, y, z}
 let memoryIdCounter = 1;
 
 // Generate JWT token
@@ -156,6 +157,15 @@ function isValidUsername(username) {
     return /^[a-zA-Z0-9_]{3,24}$/.test(username);
 }
 
+// Simple password hash for game server (compatible with C++ server)
+function simpleHash(str) {
+    let hash = BigInt(5381);
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash * BigInt(33)) ^ BigInt(str.charCodeAt(i))) & BigInt('0xFFFFFFFFFFFFFFFF');
+    }
+    return hash.toString();
+}
+
 // Cookie options
 const cookieOptions = {
     httpOnly: true,
@@ -166,42 +176,65 @@ const cookieOptions = {
 
 // ==================== API ROUTES ====================
 
+// Health check for game server
+app.post('/api/health', (req, res) => {
+    res.json({ success: true, status: 'ok', timestamp: Date.now() });
+});
+
 // Register
 app.post('/api/register', async (req, res) => {
     try {
         const { username, email, password } = req.body;
         
-        if (!username || !email || !password) {
+        // Для игрового сервера - email может быть необязательным
+        const isGameServer = !email;
+        
+        if (!username || !password) {
+            return res.json({ success: false, message: 'Username and password required' });
+        }
+        
+        if (!isGameServer && !email) {
             return res.json({ success: false, message: 'All fields are required' });
         }
         
-        if (!isValidUsername(username)) {
-            return res.json({ success: false, message: 'Username: 3-24 characters, only letters, numbers, underscore. No spaces or special characters.' });
+        // Валидация username для игрового сервера более мягкая
+        if (isGameServer) {
+            if (username.length < 2 || username.length > 20) {
+                return res.json({ success: false, message: 'Username must be 2-20 characters' });
+            }
+        } else {
+            if (!isValidUsername(username)) {
+                return res.json({ success: false, message: 'Username: 3-24 characters, only letters, numbers, underscore. No spaces or special characters.' });
+            }
         }
         
-        if (password.length < 4) {
-            return res.json({ success: false, message: 'Password must be at least 4 characters' });
+        if (password.length < 2) {
+            return res.json({ success: false, message: 'Password must be at least 2 characters' });
         }
         
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        if (!isGameServer && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
             return res.json({ success: false, message: 'Invalid email format' });
         }
         
-        const passwordHash = await bcrypt.hash(password, 10);
+        // Для веб-сайта используем bcrypt, для игры - простой хеш
+        const passwordHash = isGameServer ? simpleHash(password) : await bcrypt.hash(password, 10);
         
         if (pool) {
             const [existing] = await pool.execute(
-                'SELECT id FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)',
-                [username, email]
+                'SELECT id FROM users WHERE LOWER(username) = LOWER(?)',
+                [username]
             );
             
             if (existing.length > 0) {
-                return res.json({ success: false, message: 'Username or email already exists' });
+                return res.json({ success: false, message: 'Username already exists' });
             }
+            
+            // Для игрового сервера создаём фейковый email
+            const userEmail = email ? email.toLowerCase() : `${username.toLowerCase()}@game.local`;
             
             const [result] = await pool.execute(
                 'INSERT INTO users (username, email, password_hash, face) VALUES (?, ?, ?, ?)',
-                [username, email.toLowerCase(), passwordHash, 'default.png']
+                [username, userEmail, passwordHash, 'default.png']
             );
             
             await pool.execute(
@@ -209,14 +242,13 @@ app.post('/api/register', async (req, res) => {
                 [result.insertId]
             );
             
-            console.log(`User registered: ${username} (ID: ${result.insertId})`);
+            console.log(`User registered: ${username} (ID: ${result.insertId})${isGameServer ? ' [GAME]' : ''}`);
         } else {
             const lowerUsername = username.toLowerCase();
-            const lowerEmail = email.toLowerCase();
             
             for (const [, user] of memoryUsers) {
-                if (user.username.toLowerCase() === lowerUsername || user.email === lowerEmail) {
-                    return res.json({ success: false, message: 'Username or email already exists' });
+                if (user.username.toLowerCase() === lowerUsername) {
+                    return res.json({ success: false, message: 'Username already exists' });
                 }
             }
             
@@ -224,16 +256,17 @@ app.post('/api/register', async (req, res) => {
             memoryUsers.set(userId, {
                 id: userId,
                 username,
-                email: lowerEmail,
+                email: email ? email.toLowerCase() : `${username.toLowerCase()}@game.local`,
                 passwordHash,
                 face: 'default.png',
-                createdAt: new Date()
+                createdAt: new Date(),
+                isGameUser: isGameServer
             });
             
-            console.log(`User registered (memory): ${username} (ID: ${userId})`);
+            console.log(`User registered (memory): ${username} (ID: ${userId})${isGameServer ? ' [GAME]' : ''}`);
         }
         
-        res.json({ success: true, message: 'Registration successful! You can now login.' });
+        res.json({ success: true, message: 'Registration successful!' });
         
     } catch (error) {
         console.error('Register error:', error);
@@ -251,6 +284,7 @@ app.post('/api/login', async (req, res) => {
         }
         
         let user = null;
+        let isGameLogin = false;
         
         if (pool) {
             const [users] = await pool.execute(
@@ -264,7 +298,7 @@ app.post('/api/login', async (req, res) => {
         } else {
             for (const [, u] of memoryUsers) {
                 if (u.username.toLowerCase() === username.toLowerCase()) {
-                    user = { id: u.id, username: u.username, password_hash: u.passwordHash, face: u.face };
+                    user = { id: u.id, username: u.username, password_hash: u.passwordHash, face: u.face, isGameUser: u.isGameUser };
                     break;
                 }
             }
@@ -278,7 +312,21 @@ app.post('/api/login', async (req, res) => {
             return res.json({ success: false, message: 'Account is banned' });
         }
         
-        const validPassword = await bcrypt.compare(password, user.password_hash);
+        // Проверяем пароль - сначала bcrypt, потом простой хеш
+        let validPassword = false;
+        
+        try {
+            validPassword = await bcrypt.compare(password, user.password_hash);
+        } catch (e) {
+            // Не bcrypt хеш, проверяем простой хеш
+        }
+        
+        if (!validPassword) {
+            // Проверяем простой хеш (для игрового сервера)
+            const simpleHashValue = simpleHash(password);
+            validPassword = (user.password_hash === simpleHashValue);
+            isGameLogin = validPassword;
+        }
         
         if (!validPassword) {
             return res.json({ success: false, message: 'Invalid username or password' });
@@ -301,7 +349,7 @@ app.post('/api/login', async (req, res) => {
             res.cookie('username', user.username, { ...cookieOptions, httpOnly: false });
         }
         
-        console.log(`User logged in: ${user.username}`);
+        console.log(`User logged in: ${user.username}${isGameLogin ? ' [GAME]' : ''}`);
         
         res.json({
             success: true,
@@ -370,6 +418,91 @@ app.post('/api/logout', (req, res) => {
     res.json({ success: true });
 });
 
+// ==================== GAME SERVER API (NEW) ====================
+
+// Get player position
+app.post('/api/get_position', async (req, res) => {
+    try {
+        const { username } = req.body;
+        
+        if (!username) {
+            return res.json({ success: false, message: 'Username required' });
+        }
+        
+        if (pool) {
+            const [users] = await pool.execute(
+                'SELECT u.id, p.pos_x, p.pos_y, p.pos_z FROM users u ' +
+                'LEFT JOIN player_data p ON u.id = p.user_id ' +
+                'WHERE u.username = ?',
+                [username]
+            );
+            
+            if (users.length === 0) {
+                return res.json({ success: false, message: 'User not found' });
+            }
+            
+            const data = users[0];
+            res.json({
+                success: true,
+                x: data.pos_x || 0,
+                y: data.pos_y || 2,
+                z: data.pos_z || 0
+            });
+        } else {
+            const pos = memoryPositions.get(username.toLowerCase());
+            if (pos) {
+                res.json({ success: true, x: pos.x, y: pos.y, z: pos.z });
+            } else {
+                res.json({ success: true, x: 0, y: 2, z: 0 });
+            }
+        }
+        
+    } catch (error) {
+        console.error('Get position error:', error);
+        res.json({ success: false, message: 'Failed to get position' });
+    }
+});
+
+// Save player position
+app.post('/api/save_position', async (req, res) => {
+    try {
+        const { username, x, y, z } = req.body;
+        
+        if (!username) {
+            return res.json({ success: false, message: 'Username required' });
+        }
+        
+        const posX = parseFloat(x) || 0;
+        const posY = parseFloat(y) || 2;
+        const posZ = parseFloat(z) || 0;
+        
+        if (pool) {
+            const [users] = await pool.execute(
+                'SELECT id FROM users WHERE username = ?',
+                [username]
+            );
+            
+            if (users.length === 0) {
+                return res.json({ success: false, message: 'User not found' });
+            }
+            
+            await pool.execute(
+                'UPDATE player_data SET pos_x = ?, pos_y = ?, pos_z = ? WHERE user_id = ?',
+                [posX, posY, posZ, users[0].id]
+            );
+            
+            res.json({ success: true });
+        } else {
+            memoryPositions.set(username.toLowerCase(), { x: posX, y: posY, z: posZ });
+            res.json({ success: true });
+        }
+        
+    } catch (error) {
+        console.error('Save position error:', error);
+        res.json({ success: false, message: 'Failed to save position' });
+    }
+});
+
 // ==================== SETTINGS API ====================
 
 // Get user settings
@@ -434,8 +567,16 @@ app.post('/api/change-username', authMiddleware, async (req, res) => {
                 return res.json({ success: false, message: 'User not found' });
             }
             
-            // Verify password
-            const validPassword = await bcrypt.compare(password, users[0].password_hash);
+            // Verify password (try bcrypt first, then simple hash)
+            let validPassword = false;
+            try {
+                validPassword = await bcrypt.compare(password, users[0].password_hash);
+            } catch (e) {}
+            
+            if (!validPassword) {
+                validPassword = (users[0].password_hash === simpleHash(password));
+            }
+            
             if (!validPassword) {
                 return res.json({ success: false, message: 'Invalid password' });
             }
@@ -483,7 +624,15 @@ app.post('/api/change-username', authMiddleware, async (req, res) => {
                 return res.json({ success: false, message: 'User not found' });
             }
             
-            const validPassword = await bcrypt.compare(password, user.passwordHash);
+            let validPassword = false;
+            try {
+                validPassword = await bcrypt.compare(password, user.passwordHash);
+            } catch (e) {}
+            
+            if (!validPassword) {
+                validPassword = (user.passwordHash === simpleHash(password));
+            }
+            
             if (!validPassword) {
                 return res.json({ success: false, message: 'Invalid password' });
             }
@@ -624,7 +773,7 @@ app.get('/api/my-face', authMiddleware, async (req, res) => {
     }
 });
 
-// ==================== GAME SERVER API ====================
+// ==================== GAME SERVER API (LEGACY) ====================
 
 app.post('/api/game-auth', async (req, res) => {
     try {

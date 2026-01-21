@@ -642,3 +642,23 @@ h1 {
 ::-webkit-scrollbar-thumb:hover {
     background: #484f58;
 }
+
+/* ============ ФИКС СКРЫТИЯ СЕКЦИЙ ============ */
+.auth-section.hidden,
+.user-section.hidden {
+    display: none !important;
+}
+
+.auth-section,
+.user-section {
+    display: block;
+}
+
+/* Modal fix */
+.modal-overlay.hidden {
+    display: none !important;
+}
+
+.modal-overlay {
+    display: flex;
+}
