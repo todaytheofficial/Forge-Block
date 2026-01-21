@@ -4,9 +4,10 @@ const cors = require('cors');
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
 const path = require('path');
 const cookieParser = require('cookie-parser');
+const multer = require('multer');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -19,6 +20,15 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Папка для лиц игроков
+const FACES_DIR = path.join(__dirname, 'public', 'faces');
+if (!fs.existsSync(FACES_DIR)) {
+    fs.mkdirSync(FACES_DIR, { recursive: true });
+}
+
+// Статическая раздача лиц
+app.use('/faces', express.static(FACES_DIR));
 
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'forgeblock-secret-key-change-in-production';
@@ -40,7 +50,6 @@ async function createPool() {
             ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined
         });
         
-        // Test connection
         const conn = await pool.getConnection();
         console.log('MySQL connected successfully');
         conn.release();
@@ -60,13 +69,14 @@ async function initDatabase() {
     }
     
     try {
-        // Users table
+        // Users table с колонкой face
         await pool.execute(`
             CREATE TABLE IF NOT EXISTS users (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 username VARCHAR(32) UNIQUE NOT NULL,
                 email VARCHAR(255) UNIQUE NOT NULL,
                 password_hash VARCHAR(255) NOT NULL,
+                face VARCHAR(255) DEFAULT 'default.png',
                 auth_token VARCHAR(512),
                 token_expires DATETIME,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -76,6 +86,19 @@ async function initDatabase() {
                 INDEX idx_token (auth_token(255))
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         `);
+        
+        // Проверяем есть ли колонка face, если нет - добавляем
+        try {
+            await pool.execute(`
+                ALTER TABLE users ADD COLUMN face VARCHAR(255) DEFAULT 'default.png'
+            `);
+            console.log('Added face column to users table');
+        } catch (e) {
+            // Колонка уже существует - это нормально
+            if (!e.message.includes('Duplicate column')) {
+                console.log('Face column already exists or error:', e.message);
+            }
+        }
         
         // Player game data
         await pool.execute(`
@@ -99,7 +122,7 @@ async function initDatabase() {
     }
 }
 
-// In-memory fallback storage (for testing without DB)
+// In-memory fallback storage
 const memoryUsers = new Map();
 let memoryIdCounter = 1;
 
@@ -121,12 +144,26 @@ function verifyToken(token) {
     }
 }
 
+// Auth middleware
+function authMiddleware(req, res, next) {
+    const token = req.cookies.authToken || req.headers.authorization?.replace('Bearer ', '');
+    if (!token) {
+        return res.status(401).json({ error: 'No token provided' });
+    }
+    const decoded = verifyToken(token);
+    if (!decoded) {
+        return res.status(401).json({ error: 'Invalid token' });
+    }
+    req.user = decoded;
+    next();
+}
+
 // Cookie options
 const cookieOptions = {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+    maxAge: 30 * 24 * 60 * 60 * 1000
 };
 
 // ==================== API ROUTES ====================
@@ -136,7 +173,6 @@ app.post('/api/register', async (req, res) => {
     try {
         const { username, email, password } = req.body;
         
-        // Validation
         if (!username || !email || !password) {
             return res.json({ success: false, message: 'All fields are required' });
         }
@@ -160,7 +196,6 @@ app.post('/api/register', async (req, res) => {
         const passwordHash = await bcrypt.hash(password, 10);
         
         if (pool) {
-            // MySQL storage
             const [existing] = await pool.execute(
                 'SELECT id FROM users WHERE username = ? OR email = ?',
                 [username.toLowerCase(), email.toLowerCase()]
@@ -170,12 +205,12 @@ app.post('/api/register', async (req, res) => {
                 return res.json({ success: false, message: 'Username or email already exists' });
             }
             
+            // Регистрация с дефолтным лицом
             const [result] = await pool.execute(
-                'INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)',
-                [username, email.toLowerCase(), passwordHash]
+                'INSERT INTO users (username, email, password_hash, face) VALUES (?, ?, ?, ?)',
+                [username, email.toLowerCase(), passwordHash, 'default.png']
             );
             
-            // Create player data
             await pool.execute(
                 'INSERT INTO player_data (user_id) VALUES (?)',
                 [result.insertId]
@@ -183,7 +218,6 @@ app.post('/api/register', async (req, res) => {
             
             console.log(`User registered: ${username} (ID: ${result.insertId})`);
         } else {
-            // Memory storage fallback
             const lowerUsername = username.toLowerCase();
             const lowerEmail = email.toLowerCase();
             
@@ -199,6 +233,7 @@ app.post('/api/register', async (req, res) => {
                 username,
                 email: lowerEmail,
                 passwordHash,
+                face: 'default.png',
                 createdAt: new Date()
             });
             
@@ -225,9 +260,8 @@ app.post('/api/login', async (req, res) => {
         let user = null;
         
         if (pool) {
-            // MySQL
             const [users] = await pool.execute(
-                'SELECT id, username, password_hash, is_banned FROM users WHERE username = ?',
+                'SELECT id, username, password_hash, face, is_banned FROM users WHERE username = ?',
                 [username]
             );
             
@@ -235,10 +269,9 @@ app.post('/api/login', async (req, res) => {
                 user = users[0];
             }
         } else {
-            // Memory fallback
             for (const [, u] of memoryUsers) {
                 if (u.username.toLowerCase() === username.toLowerCase()) {
-                    user = { id: u.id, username: u.username, password_hash: u.passwordHash };
+                    user = { id: u.id, username: u.username, password_hash: u.passwordHash, face: u.face };
                     break;
                 }
             }
@@ -258,22 +291,18 @@ app.post('/api/login', async (req, res) => {
             return res.json({ success: false, message: 'Invalid username or password' });
         }
         
-        // Generate token
         const token = generateToken(user.id, user.username);
         
-        // Calculate expiry
         const expiresAt = new Date();
         expiresAt.setDate(expiresAt.getDate() + (remember ? 30 : 1));
         
         if (pool) {
-            // Save to MySQL
             await pool.execute(
                 'UPDATE users SET auth_token = ?, token_expires = ?, last_login = NOW() WHERE id = ?',
                 [token, expiresAt, user.id]
             );
         }
         
-        // Set cookie
         if (remember) {
             res.cookie('authToken', token, cookieOptions);
             res.cookie('username', user.username, { ...cookieOptions, httpOnly: false });
@@ -286,7 +315,8 @@ app.post('/api/login', async (req, res) => {
             message: 'Login successful',
             token,
             username: user.username,
-            userId: user.id
+            userId: user.id,
+            face: user.face || 'default.png'
         });
         
     } catch (error) {
@@ -295,7 +325,7 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// Verify token / Check session
+// Verify token
 app.post('/api/verify', async (req, res) => {
     try {
         const token = req.cookies.authToken || req.headers.authorization?.replace('Bearer ', '');
@@ -311,7 +341,7 @@ app.post('/api/verify', async (req, res) => {
         
         if (pool) {
             const [users] = await pool.execute(
-                'SELECT id, username, token_expires, is_banned FROM users WHERE id = ? AND auth_token = ?',
+                'SELECT id, username, face, token_expires, is_banned FROM users WHERE id = ? AND auth_token = ?',
                 [decoded.userId, token]
             );
             
@@ -324,10 +354,14 @@ app.post('/api/verify', async (req, res) => {
                 return res.json({ valid: false });
             }
             
-            res.json({ valid: true, username: user.username, userId: user.id });
+            res.json({ 
+                valid: true, 
+                username: user.username, 
+                userId: user.id,
+                face: user.face || 'default.png'
+            });
         } else {
-            // Memory fallback
-            res.json({ valid: true, username: decoded.username, userId: decoded.userId });
+            res.json({ valid: true, username: decoded.username, userId: decoded.userId, face: 'default.png' });
         }
         
     } catch (error) {
@@ -343,7 +377,117 @@ app.post('/api/logout', (req, res) => {
     res.json({ success: true });
 });
 
-// Game server auth (called by game server to verify player token)
+// ==================== FACE API ====================
+
+// Получить лицо пользователя (для игры)
+app.get('/api/face/:username', async (req, res) => {
+    try {
+        const { username } = req.params;
+        
+        if (pool) {
+            const [users] = await pool.execute(
+                'SELECT face FROM users WHERE username = ?',
+                [username]
+            );
+            
+            if (users.length === 0) {
+                return res.json({ face: 'default.png' });
+            }
+            
+            res.json({ face: users[0].face || 'default.png' });
+        } else {
+            for (const [, u] of memoryUsers) {
+                if (u.username.toLowerCase() === username.toLowerCase()) {
+                    return res.json({ face: u.face || 'default.png' });
+                }
+            }
+            res.json({ face: 'default.png' });
+        }
+    } catch (error) {
+        console.error('Get face error:', error);
+        res.json({ face: 'default.png' });
+    }
+});
+
+// Загрузка своего лица
+const upload = multer({
+    storage: multer.diskStorage({
+        destination: FACES_DIR,
+        filename: (req, file, cb) => {
+            const uniqueName = `face_${req.user.userId}_${Date.now()}.png`;
+            cb(null, uniqueName);
+        }
+    }),
+    limits: { fileSize: 256 * 1024 }, // 256KB max
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype === 'image/png') {
+            cb(null, true);
+        } else {
+            cb(new Error('Only PNG files allowed'));
+        }
+    }
+});
+
+app.post('/api/upload-face', authMiddleware, upload.single('face'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ success: false, message: 'No file uploaded' });
+        }
+        
+        const faceFilename = req.file.filename;
+        
+        if (pool) {
+            // Удаляем старое лицо (если не дефолтное)
+            const [old] = await pool.execute('SELECT face FROM users WHERE id = ?', [req.user.userId]);
+            if (old.length > 0 && old[0].face && old[0].face !== 'default.png') {
+                const oldPath = path.join(FACES_DIR, old[0].face);
+                if (fs.existsSync(oldPath)) {
+                    fs.unlinkSync(oldPath);
+                }
+            }
+            
+            // Сохраняем новое
+            await pool.execute(
+                'UPDATE users SET face = ? WHERE id = ?',
+                [faceFilename, req.user.userId]
+            );
+        } else {
+            const user = memoryUsers.get(req.user.userId);
+            if (user) {
+                user.face = faceFilename;
+            }
+        }
+        
+        console.log(`User ${req.user.username} uploaded face: ${faceFilename}`);
+        
+        res.json({ success: true, face: faceFilename });
+    } catch (error) {
+        console.error('Upload face error:', error);
+        res.status(500).json({ success: false, message: 'Upload failed' });
+    }
+});
+
+// Получить своё текущее лицо
+app.get('/api/my-face', authMiddleware, async (req, res) => {
+    try {
+        if (pool) {
+            const [users] = await pool.execute(
+                'SELECT face FROM users WHERE id = ?',
+                [req.user.userId]
+            );
+            res.json({ face: users[0]?.face || 'default.png' });
+        } else {
+            const user = memoryUsers.get(req.user.userId);
+            res.json({ face: user?.face || 'default.png' });
+        }
+    } catch (error) {
+        res.json({ face: 'default.png' });
+    }
+});
+
+// ==================== GAME SERVER API ====================
+
+// Game server auth (проверка токена для игрового сервера)
 app.post('/api/game-auth', async (req, res) => {
     try {
         const { token } = req.body;
@@ -359,7 +503,7 @@ app.post('/api/game-auth', async (req, res) => {
         
         if (pool) {
             const [users] = await pool.execute(
-                'SELECT u.id, u.username, u.is_banned, p.place_id, p.pos_x, p.pos_y, p.pos_z ' +
+                'SELECT u.id, u.username, u.face, u.is_banned, p.place_id, p.pos_x, p.pos_y, p.pos_z ' +
                 'FROM users u LEFT JOIN player_data p ON u.id = p.user_id ' +
                 'WHERE u.id = ?',
                 [decoded.userId]
@@ -379,6 +523,7 @@ app.post('/api/game-auth', async (req, res) => {
                 success: true,
                 userId: user.id,
                 username: user.username,
+                face: user.face || 'default.png',
                 placeId: user.place_id || 1,
                 posX: user.pos_x || 0,
                 posY: user.pos_y || 5,
@@ -389,6 +534,7 @@ app.post('/api/game-auth', async (req, res) => {
                 success: true,
                 userId: decoded.userId,
                 username: decoded.username,
+                face: 'default.png',
                 placeId: 1,
                 posX: 0,
                 posY: 5,
@@ -408,7 +554,7 @@ app.post('/api/save-player', async (req, res) => {
         const { userId, placeId, posX, posY, posZ } = req.body;
         
         if (!pool) {
-            return res.json({ success: true }); // No DB, just acknowledge
+            return res.json({ success: true });
         }
         
         await pool.execute(
@@ -447,7 +593,7 @@ app.get('/api/status', async (req, res) => {
     });
 });
 
-// Get user stats
+// Stats
 app.get('/api/stats', async (req, res) => {
     try {
         if (!pool) {
@@ -468,16 +614,11 @@ app.get('/api/stats', async (req, res) => {
     }
 });
 
-app.use((req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
 // Download route
 app.get('/downloads/:filename', (req, res) => {
     const filename = req.params.filename;
     const filepath = path.join(__dirname, 'downloads', filename);
     
-    // Security check
     if (filename.includes('..') || !filename.endsWith('.zip')) {
         return res.status(404).send('Not found');
     }
@@ -488,6 +629,11 @@ app.get('/downloads/:filename', (req, res) => {
             res.status(404).send('File not found');
         }
     });
+});
+
+// SPA fallback
+app.use((req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Start server
