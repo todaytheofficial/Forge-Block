@@ -472,6 +472,24 @@ app.use((req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Download route
+app.get('/downloads/:filename', (req, res) => {
+    const filename = req.params.filename;
+    const filepath = path.join(__dirname, 'downloads', filename);
+    
+    // Security check
+    if (filename.includes('..') || !filename.endsWith('.zip')) {
+        return res.status(404).send('Not found');
+    }
+    
+    res.download(filepath, filename, (err) => {
+        if (err) {
+            console.error('Download error:', err.message);
+            res.status(404).send('File not found');
+        }
+    });
+});
+
 // Start server
 async function start() {
     await createPool();
