@@ -1,0 +1,19 @@
+{
+  "name": "forgeblockweb",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "dotenv": "^17.2.3",
+    "mysql2": "^3.16.1"
+  }
+}
