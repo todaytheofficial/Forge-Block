@@ -12,6 +12,12 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Create faces directory
+const FACES_DIR = path.join(__dirname, 'public', 'faces');
+if (!fs.existsSync(FACES_DIR)) {
+    fs.mkdirSync(FACES_DIR, { recursive: true });
+}
+
 // Middleware
 app.use(cors({
     origin: true,
@@ -20,14 +26,6 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
-
-// Папка для лиц игроков
-const FACES_DIR = path.join(__dirname, 'public', 'faces');
-if (!fs.existsSync(FACES_DIR)) {
-    fs.mkdirSync(FACES_DIR, { recursive: true });
-}
-
-// Статическая раздача лиц
 app.use('/faces', express.static(FACES_DIR));
 
 // JWT Secret
@@ -69,7 +67,6 @@ async function initDatabase() {
     }
     
     try {
-        // Users table с колонкой face
         await pool.execute(`
             CREATE TABLE IF NOT EXISTS users (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -87,20 +84,13 @@ async function initDatabase() {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         `);
         
-        // Проверяем есть ли колонка face, если нет - добавляем
         try {
-            await pool.execute(`
-                ALTER TABLE users ADD COLUMN face VARCHAR(255) DEFAULT 'default.png'
-            `);
+            await pool.execute(`ALTER TABLE users ADD COLUMN face VARCHAR(255) DEFAULT 'default.png'`);
             console.log('Added face column to users table');
         } catch (e) {
-            // Колонка уже существует - это нормально
-            if (!e.message.includes('Duplicate column')) {
-                console.log('Face column already exists or error:', e.message);
-            }
+            // Column exists
         }
         
-        // Player game data
         await pool.execute(`
             CREATE TABLE IF NOT EXISTS player_data (
                 user_id INT PRIMARY KEY,
@@ -147,15 +137,23 @@ function verifyToken(token) {
 // Auth middleware
 function authMiddleware(req, res, next) {
     const token = req.cookies.authToken || req.headers.authorization?.replace('Bearer ', '');
+    
     if (!token) {
         return res.status(401).json({ error: 'No token provided' });
     }
+    
     const decoded = verifyToken(token);
     if (!decoded) {
         return res.status(401).json({ error: 'Invalid token' });
     }
+    
     req.user = decoded;
     next();
+}
+
+// Validate username (only letters, numbers, underscore - no spaces, emoji, cyrillic)
+function isValidUsername(username) {
+    return /^[a-zA-Z0-9_]{3,24}$/.test(username);
 }
 
 // Cookie options
@@ -177,12 +175,8 @@ app.post('/api/register', async (req, res) => {
             return res.json({ success: false, message: 'All fields are required' });
         }
         
-        if (username.length < 3 || username.length > 24) {
-            return res.json({ success: false, message: 'Username must be 3-24 characters' });
-        }
-        
-        if (!/^[a-zA-Z0-9_]+$/.test(username)) {
-            return res.json({ success: false, message: 'Username can only contain letters, numbers and underscore' });
+        if (!isValidUsername(username)) {
+            return res.json({ success: false, message: 'Username: 3-24 characters, only letters, numbers, underscore. No spaces or special characters.' });
         }
         
         if (password.length < 4) {
@@ -197,15 +191,14 @@ app.post('/api/register', async (req, res) => {
         
         if (pool) {
             const [existing] = await pool.execute(
-                'SELECT id FROM users WHERE username = ? OR email = ?',
-                [username.toLowerCase(), email.toLowerCase()]
+                'SELECT id FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)',
+                [username, email]
             );
             
             if (existing.length > 0) {
                 return res.json({ success: false, message: 'Username or email already exists' });
             }
             
-            // Регистрация с дефолтным лицом
             const [result] = await pool.execute(
                 'INSERT INTO users (username, email, password_hash, face) VALUES (?, ?, ?, ?)',
                 [username, email.toLowerCase(), passwordHash, 'default.png']
@@ -354,9 +347,9 @@ app.post('/api/verify', async (req, res) => {
                 return res.json({ valid: false });
             }
             
-            res.json({ 
-                valid: true, 
-                username: user.username, 
+            res.json({
+                valid: true,
+                username: user.username,
                 userId: user.id,
                 face: user.face || 'default.png'
             });
@@ -377,9 +370,159 @@ app.post('/api/logout', (req, res) => {
     res.json({ success: true });
 });
 
+// ==================== SETTINGS API ====================
+
+// Get user settings
+app.get('/api/settings', authMiddleware, async (req, res) => {
+    try {
+        if (pool) {
+            const [users] = await pool.execute(
+                'SELECT username, email, face, created_at FROM users WHERE id = ?',
+                [req.user.userId]
+            );
+            
+            if (users.length === 0) {
+                return res.status(404).json({ error: 'User not found' });
+            }
+            
+            res.json({
+                username: users[0].username,
+                email: users[0].email,
+                face: users[0].face || 'default.png',
+                createdAt: users[0].created_at
+            });
+        } else {
+            const user = memoryUsers.get(req.user.userId);
+            if (!user) {
+                return res.status(404).json({ error: 'User not found' });
+            }
+            res.json({
+                username: user.username,
+                email: user.email,
+                face: user.face || 'default.png',
+                createdAt: user.createdAt
+            });
+        }
+    } catch (error) {
+        console.error('Get settings error:', error);
+        res.status(500).json({ error: 'Failed to get settings' });
+    }
+});
+
+// Change username
+app.post('/api/change-username', authMiddleware, async (req, res) => {
+    try {
+        const { newUsername, password } = req.body;
+        
+        if (!newUsername || !password) {
+            return res.json({ success: false, message: 'Username and password required' });
+        }
+        
+        // Validate new username
+        if (!isValidUsername(newUsername)) {
+            return res.json({ success: false, message: 'Username: 3-24 characters, only letters (a-z), numbers, underscore. No spaces, emoji or special characters.' });
+        }
+        
+        if (pool) {
+            // Get current user
+            const [users] = await pool.execute(
+                'SELECT id, username, password_hash FROM users WHERE id = ?',
+                [req.user.userId]
+            );
+            
+            if (users.length === 0) {
+                return res.json({ success: false, message: 'User not found' });
+            }
+            
+            // Verify password
+            const validPassword = await bcrypt.compare(password, users[0].password_hash);
+            if (!validPassword) {
+                return res.json({ success: false, message: 'Invalid password' });
+            }
+            
+            // Check if new username is taken
+            const [existing] = await pool.execute(
+                'SELECT id FROM users WHERE LOWER(username) = LOWER(?) AND id != ?',
+                [newUsername, req.user.userId]
+            );
+            
+            if (existing.length > 0) {
+                return res.json({ success: false, message: 'Username already taken' });
+            }
+            
+            // Update username
+            await pool.execute(
+                'UPDATE users SET username = ? WHERE id = ?',
+                [newUsername, req.user.userId]
+            );
+            
+            // Generate new token with new username
+            const newToken = generateToken(req.user.userId, newUsername);
+            const expiresAt = new Date();
+            expiresAt.setDate(expiresAt.getDate() + 30);
+            
+            await pool.execute(
+                'UPDATE users SET auth_token = ?, token_expires = ? WHERE id = ?',
+                [newToken, expiresAt, req.user.userId]
+            );
+            
+            res.cookie('authToken', newToken, cookieOptions);
+            res.cookie('username', newUsername, { ...cookieOptions, httpOnly: false });
+            
+            console.log(`Username changed: ${users[0].username} -> ${newUsername}`);
+            
+            res.json({ 
+                success: true, 
+                message: 'Username changed successfully',
+                newUsername,
+                newToken
+            });
+        } else {
+            const user = memoryUsers.get(req.user.userId);
+            if (!user) {
+                return res.json({ success: false, message: 'User not found' });
+            }
+            
+            const validPassword = await bcrypt.compare(password, user.passwordHash);
+            if (!validPassword) {
+                return res.json({ success: false, message: 'Invalid password' });
+            }
+            
+            // Check if taken
+            for (const [id, u] of memoryUsers) {
+                if (id !== req.user.userId && u.username.toLowerCase() === newUsername.toLowerCase()) {
+                    return res.json({ success: false, message: 'Username already taken' });
+                }
+            }
+            
+            user.username = newUsername;
+            const newToken = generateToken(req.user.userId, newUsername);
+            
+            res.json({ 
+                success: true, 
+                message: 'Username changed successfully',
+                newUsername,
+                newToken
+            });
+        }
+    } catch (error) {
+        console.error('Change username error:', error);
+        res.json({ success: false, message: 'Failed to change username' });
+    }
+});
+
+// Get auth token (for settings page)
+app.get('/api/get-token', authMiddleware, async (req, res) => {
+    try {
+        const token = req.cookies.authToken || req.headers.authorization?.replace('Bearer ', '');
+        res.json({ token });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to get token' });
+    }
+});
+
 // ==================== FACE API ====================
 
-// Получить лицо пользователя (для игры)
 app.get('/api/face/:username', async (req, res) => {
     try {
         const { username } = req.params;
@@ -409,7 +552,6 @@ app.get('/api/face/:username', async (req, res) => {
     }
 });
 
-// Загрузка своего лица
 const upload = multer({
     storage: multer.diskStorage({
         destination: FACES_DIR,
@@ -418,7 +560,7 @@ const upload = multer({
             cb(null, uniqueName);
         }
     }),
-    limits: { fileSize: 256 * 1024 }, // 256KB max
+    limits: { fileSize: 256 * 1024 },
     fileFilter: (req, file, cb) => {
         if (file.mimetype === 'image/png') {
             cb(null, true);
@@ -437,7 +579,6 @@ app.post('/api/upload-face', authMiddleware, upload.single('face'), async (req, 
         const faceFilename = req.file.filename;
         
         if (pool) {
-            // Удаляем старое лицо (если не дефолтное)
             const [old] = await pool.execute('SELECT face FROM users WHERE id = ?', [req.user.userId]);
             if (old.length > 0 && old[0].face && old[0].face !== 'default.png') {
                 const oldPath = path.join(FACES_DIR, old[0].face);
@@ -446,7 +587,6 @@ app.post('/api/upload-face', authMiddleware, upload.single('face'), async (req, 
                 }
             }
             
-            // Сохраняем новое
             await pool.execute(
                 'UPDATE users SET face = ? WHERE id = ?',
                 [faceFilename, req.user.userId]
@@ -467,7 +607,6 @@ app.post('/api/upload-face', authMiddleware, upload.single('face'), async (req, 
     }
 });
 
-// Получить своё текущее лицо
 app.get('/api/my-face', authMiddleware, async (req, res) => {
     try {
         if (pool) {
@@ -487,7 +626,6 @@ app.get('/api/my-face', authMiddleware, async (req, res) => {
 
 // ==================== GAME SERVER API ====================
 
-// Game server auth (проверка токена для игрового сервера)
 app.post('/api/game-auth', async (req, res) => {
     try {
         const { token } = req.body;
@@ -548,7 +686,6 @@ app.post('/api/game-auth', async (req, res) => {
     }
 });
 
-// Save player data
 app.post('/api/save-player', async (req, res) => {
     try {
         const { userId, placeId, posX, posY, posZ } = req.body;
@@ -570,7 +707,6 @@ app.post('/api/save-player', async (req, res) => {
     }
 });
 
-// Server status
 app.get('/api/status', async (req, res) => {
     let playerCount = 0;
     let dbStatus = 'disconnected';
@@ -593,7 +729,6 @@ app.get('/api/status', async (req, res) => {
     });
 });
 
-// Stats
 app.get('/api/stats', async (req, res) => {
     try {
         if (!pool) {
@@ -614,7 +749,6 @@ app.get('/api/stats', async (req, res) => {
     }
 });
 
-// Download route
 app.get('/downloads/:filename', (req, res) => {
     const filename = req.params.filename;
     const filepath = path.join(__dirname, 'downloads', filename);

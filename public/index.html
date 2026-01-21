@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ForgeBlock</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -53,7 +53,8 @@
                         <label for="regUsername">USERNAME</label>
                         <input type="text" id="regUsername" name="username" required 
                                minlength="3" maxlength="24" autocomplete="username"
-                               placeholder="Choose username (letters, numbers, _)">
+                               pattern="[a-zA-Z0-9_]+"
+                               placeholder="Letters, numbers, underscore only">
                     </div>
                     <div class="input-group">
                         <label for="regEmail">EMAIL</label>
@@ -87,27 +88,75 @@
                         <h2 id="userName">Player</h2>
                         <p class="user-status online">● Online</p>
                     </div>
-                </div>
-                
-                <div class="token-section">
-                    <p class="token-label">Your Game Token:</p>
-                    <div class="token-display">
-                        <code id="authToken">Loading...</code>
-                        <button class="btn-small" onclick="copyToken()" id="copyBtn">COPY</button>
-                    </div>
-                    <p class="token-hint">Token auto-saved in downloaded game</p>
+                    <button class="btn-settings" onclick="openSettings()" title="Settings">⚙</button>
                 </div>
 
                 <div class="download-box">
-    <p class="version-text">Version 0.1</p>
-    <a href="/downloads/ForgeBlock_Setup.zip" class="btn-download" id="downloadBtn" download>
-        DOWNLOAD GAME
-    </a>
-</div>
+                    <p class="version-text">Version 0.1</p>
+                    <a href="/downloads/ForgeBlock_Setup.zip" class="btn-download" id="downloadBtn" download>
+                        DOWNLOAD GAME
+                    </a>
+                    <p class="download-hint">Game will auto-login with your account</p>
+                </div>
 
                 <button class="btn-logout" onclick="logout()">LOGOUT</button>
             </div>
         </section>
+
+        <!-- Settings Modal -->
+        <div class="modal-overlay hidden" id="settingsModal">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>Settings</h3>
+                    <button class="modal-close" onclick="closeSettings()">×</button>
+                </div>
+                <div class="modal-content">
+                    <!-- Change Username -->
+                    <div class="settings-section">
+                        <h4>Change Username</h4>
+                        <form id="changeUsernameForm">
+                            <div class="input-group">
+                                <label>NEW USERNAME</label>
+                                <input type="text" id="newUsername" required 
+                                       minlength="3" maxlength="24"
+                                       pattern="[a-zA-Z0-9_]+"
+                                       placeholder="Letters, numbers, underscore only">
+                            </div>
+                            <div class="input-group">
+                                <label>CURRENT PASSWORD</label>
+                                <input type="password" id="confirmPassword" required
+                                       placeholder="Enter your password">
+                            </div>
+                            <button type="submit" class="btn-auth btn-small-full">CHANGE USERNAME</button>
+                            <p class="message" id="usernameChangeMessage"></p>
+                        </form>
+                    </div>
+
+                    <!-- Game Token -->
+                    <div class="settings-section">
+                        <h4>Game Token</h4>
+                        <p class="settings-hint">Use this token to login in the game client</p>
+                        <div class="token-display">
+                            <code id="authToken">Loading...</code>
+                            <button class="btn-small" onclick="copyToken()">COPY</button>
+                        </div>
+                    </div>
+
+                    <!-- Account Info -->
+                    <div class="settings-section">
+                        <h4>Account Info</h4>
+                        <div class="info-row">
+                            <span>Email:</span>
+                            <span id="userEmail">-</span>
+                        </div>
+                        <div class="info-row">
+                            <span>Joined:</span>
+                            <span id="userJoined">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- Server Status -->
         <section class="status-section">
@@ -126,7 +175,7 @@
         </section>
 
         <footer class="footer">
-            <p>© 2025 ForgeBlock
+            <p>© 2025 ForgeBlock</p>
         </footer>
     </main>
 
